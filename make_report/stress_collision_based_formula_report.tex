@@ -1,0 +1,309 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,booktabs,longtable,array}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\code}[1]{\begingroup\urlstyle{tt}\footnotesize\nolinkurl{#1}\endgroup}
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{0pt}
+\setlength{\tabcolsep}{4pt}
+\setlength{\emergencystretch}{3em}
+\allowdisplaybreaks
+\renewcommand{\arraystretch}{1.2}
+
+\title{Collision-Based Export Formula Report}
+\author{Generated from stress\_collision\_based.py}
+\date{}
+\begin{document}
+\maketitle
+\noindent Formulas implemented in \code{stress_collision_based.py}\par
+\medskip
+\noindent This document summarizes the exact formulas currently implemented in \code{stress_collision_based.py} to produce exported CSV data.
+
+\section*{Output files}
+\begin{longtable}{@{}L{0.18\textwidth}L{0.32\textwidth}L{0.42\textwidth}@{}}
+\toprule
+\textbf{Type} & \textbf{File name pattern} & \textbf{Content}\\
+\midrule
+\endhead
+Summary CSV & \code{<dem>_collision_over_time.csv} & One row per processed timestep.\\
+Extracted CSV & \code{<dem>_collision_extracted_at_<time>.csv} & Per-collision values at the selected extract time.\\
+\bottomrule
+\end{longtable}
+
+\section*{Notation}
+\begin{longtable}{@{}L{0.22\textwidth}L{0.70\textwidth}@{}}
+\toprule
+\textbf{Symbol} & \textbf{Meaning}\\
+\midrule
+\endhead
+$k$ & Current timestep index.\\
+$t_k$ & Current sample time returned by EDEM for timestep k.\\
+$\Delta t_k$ & Interval length from the previous sample to the current sample.\\
+$C_k$ & Set of collisions present in the current surfSurf sample.\\
+$N_k = |C_k|$ & Number of sampled collisions at timestep k.\\
+$N_k^{new}$ & Number of sampled collisions whose start time lies inside the current interval.\\
+$s_i, e_i$ & Start time and end time of collision i reported by EDEM.\\
+$\tau_i^{overlap}$ & Overlap duration of collision i with the interval $[t_{k-1}, t_k]$.\\
+$d_i$ & Full contact duration of collision i.\\
+$I[\cdot]$ & Indicator function equal to 1 when the stated condition is true and 0 otherwise.\\
+$m_{1,i}, m_{2,i}$ & Masses of the two particles in collision i.\\
+$r_{1,i}, r_{2,i}$ & Radii of the two particles in collision i.\\
+$\mathbf{F}_{n,i}, \mathbf{F}_{s,i}$ & Current total normal and total tangential force vectors from EDEM.\\
+$F_{n,i}, F_{s,i}, F_i$ & Magnitudes of normal, tangential, and total collision force used in the code.\\
+$F_i^{max}$ & Maximum total collision-force magnitude formed from stored peak-force vectors.\\
+$E_{n,i}, E_{s,i}, E_i$ & Normal, shear, and total collision energies used in the code.\\
+$m_{eff,i}$ & Reduced mass of collision i.\\
+$J_{n,i}, J_{s,i}, J_i$ & Normal, shear, and total impulse attributed to the current interval.\\
+$A_i$ & Collision area proxy used by the exported stress calculation.\\
+$\sigma_{n,i}, \sigma_{s,i}, \sigma_i$ & Exported normal, shear, and total stress-like values per collision.\\
+$P_{n,i}, P_{s,i}, P_i$ & Interval-average power values per collision.\\
+$n_{h,k}$ & Number of current sampled collisions touching host particle h at timestep k.\\
+$\boldsymbol{\omega}_h$ & Angular-velocity vector of host particle h.\\
+$d_{h,k}^{rot}, D_{h,k}^{rot}$ & Current and cumulative rotational travel distance for host particle h.\\
+$\xi_{h,k}$ & Binary indicator showing whether host particle h is contacting at timestep k.\\
+$T_{h,k}^{contact}$ & Cumulative time for which host particle h is marked as contacting.\\
+$H_k$ & Host particles selected by the configured host material.\\
+\bottomrule
+\end{longtable}
+
+\section*{How to read the symbols}
+\paragraph{Time and interval symbols}
+$k$ is a sample index and $t_k$ is the physical simulation time at that sample.
+$\Delta t_k$ is the reporting interval width, so it is the denominator for rate-type quantities such as collision frequency and power.
+Each collision has a start time $s_i$ and end time $e_i$, but only the overlap part $\tau_i^{overlap}$ is assigned to the current interval $[t_{k-1}, t_k]$.
+By contrast, $d_i$ is the full lifetime of collision $i$ over its entire contact history, so $\tau_i^{overlap}$ and $d_i$ are not interchangeable.
+
+\paragraph{Mechanical symbols}
+$m_{1,i}, m_{2,i}$ and $r_{1,i}, r_{2,i}$ are the masses and radii of the two particles forming collision $i$.
+Bold symbols $\mathbf{F}_{n,i}$ and $\mathbf{F}_{s,i}$ are vectors from EDEM, whereas $F_{n,i}$, $F_{s,i}$, and $F_i$ are magnitudes used by the export code.
+$E$ terms denote energies, $m_{eff,i}$ is the reduced mass that normalizes those energies into specific intensity, and $J$ terms are impulses obtained by integrating force over time.
+
+\paragraph{Stress and power symbols}
+$A_i$ is a geometric area proxy built from particle radii, not a true Hertzian contact patch.
+The exported stress-like values $\sigma_{n,i}$, $\sigma_{s,i}$, and $\sigma_i$ come from impulse divided by overlap time and by this area proxy.
+They should be read as code-defined proxies, not as direct continuum stress or a true Hertz contact stress.
+$P_{n,i}$, $P_{s,i}$, and $P_i$ are interval-average powers computed by dividing collision energy by $\Delta t_k$.
+
+\paragraph{Host-particle rotation symbols}
+For a host particle $h$, $\boldsymbol{\omega}_h$ is angular velocity, $n_{h,k}$ is the number of active sampled contacts touching that host particle, and $\xi_{h,k} = I[n_{h,k} > 0]$ converts that contact state into a binary gate.
+That gate decides whether the current rotational travel distance $d_{h,k}^{rot}$ contributes to the cumulative rotational distance $D_{h,k}^{rot}$ and cumulative contact time $T_{h,k}^{contact}$.
+
+\section*{Core equations}
+\paragraph{C1. Interval length}
+\[
+\Delta t_k = \max(0, t_k - t_{k-1})
+\]
+For the first processed timestep, the implementation uses 0 as the previous time if no earlier sample is available.
+
+\paragraph{C2. Overlap duration inside the current interval}
+\[
+\tau_i^{overlap} = \max\!\left(0, \min(e_i, t_k) - \max(s_i, t_{k-1})\right)
+\]
+This is the contact time attributed to the current interval for collision i.
+It is not the same as the full contact duration $d_i$, which is defined separately in C3.
+
+\paragraph{C3. Full contact duration of one collision}
+\[
+d_i = \max(0, e_i - s_i)
+\]
+Used for the summary field \code{Ave_contact_duration_per_collision}.
+
+\paragraph{C4. Collision frequency based on new collisions started in the interval}
+\[
+\begin{aligned}
+N_k^{new} &=
+\begin{cases}
+\sum_{i \in C_k} I[t_{k-1} \le s_i \le t_k], & t_{k-1} \le 0, \\
+\sum_{i \in C_k} I[t_{k-1} < s_i \le t_k], & t_{k-1} > 0,
+\end{cases} \\
+f_k^{coll} &= \frac{N_k^{new}}{\Delta t_k}
+\end{aligned}
+\]
+$C_k$ is the full set of collisions present in the current sample, not only the newly started ones. Therefore $N_k^{new}$ is only the subset count inside $C_k$ whose start times fall in the current interval. It is computed exactly as in \code{count_started_collisions} in the code: the first interval includes the lower bound so collisions starting exactly at time $0$ are counted once, while later intervals use an open lower bound to avoid double counting collisions that start exactly on a timestep boundary.
+
+\paragraph{C5. Current force magnitudes}
+\[
+\begin{aligned}
+F_{n,i} &= \|\mathbf{F}_{n,i}\|, \\
+F_{s,i} &= \|\mathbf{F}_{s,i}\|, \\
+F_i &= \|\mathbf{F}_{n,i} + \mathbf{F}_{s,i}\|
+\end{aligned}
+\]
+The total collision force magnitude is the norm of the vector sum, not the sum of norms.
+
+\paragraph{C6. Maximum-force magnitude used for impact statistics}
+\[
+F_i^{max} = \|\mathbf{F}_{n,i}^{max} + \mathbf{F}_{s,i}^{max}\|
+\]
+Used for \code{Ave_Fcol_Max_per_collision}, \code{Max_Fcol_Max_per_collision}, and \code{high_impact_event_fraction}.
+
+\paragraph{C7. Reduced mass}
+\[
+m_{eff,i} = \frac{m_{1,i} m_{2,i}}{m_{1,i} + m_{2,i}}
+\]
+If the denominator is zero, the code treats the reduced mass as invalid and writes zero for specific-intensity terms.
+
+\paragraph{C8. Collision specific-intensity values}
+\[
+\begin{aligned}
+SI_{n,i} &= \frac{E_{n,i}}{m_{eff,i}}, \\
+SI_{s,i} &= \frac{E_{s,i}}{m_{eff,i}}, \\
+SI_i &= \frac{E_i}{m_{eff,i}}
+\end{aligned}
+\]
+Here $E_i = E_{n,i} + E_{s,i}$. The current code sets dissipation energy to zero.
+
+\paragraph{C9. Collision area proxy used in stress calculations}
+\[
+A_i = \pi \left(\frac{r_{1,i} + r_{2,i}}{2}\right)^2
+\]
+This is a geometric proxy area from the current implementation, not a Hertz contact patch.
+
+\paragraph{C10. Trapezoidal impulse for matched sampled collisions}
+\[
+\begin{aligned}
+J_{n,i} &= \frac{1}{2}\left(F_{n,i}^{prev} + F_{n,i}^{curr}\right)\tau_i^{overlap}, \\
+J_{s,i} &= \frac{1}{2}\left(F_{s,i}^{prev} + F_{s,i}^{curr}\right)\tau_i^{overlap}, \\
+J_i &= \frac{1}{2}\left(F_i^{prev} + F_i^{curr}\right)\tau_i^{overlap}
+\end{aligned}
+\]
+The code matches current and previous collisions by unordered particle pair and, when needed, nearest contact position.
+Only collisions that are present in the current sampled set and successfully matched to previous state contribute to this trapezoidal term; collision-level exports do not add a separate previous-only tail term.
+
+\paragraph{C11. Collision stress values from impulse, overlap time, and area}
+\[
+\begin{aligned}
+\sigma_{n,i} &= \frac{J_{n,i}}{\tau_i^{overlap} A_i}, \\
+\sigma_{s,i} &= \frac{J_{s,i}}{\tau_i^{overlap} A_i}, \\
+\sigma_i &= \frac{J_i}{\tau_i^{overlap} A_i}
+\end{aligned}
+\]
+If overlap time or area is non-positive, the code writes zero.
+These exported $\sigma$ values are therefore stress-like proxies from the implementation, not direct physical contact stresses.
+
+\paragraph{C12. Collision power values}
+\[
+\begin{aligned}
+P_{n,i} &= \frac{E_{n,i}}{\Delta t_k}, \\
+P_{s,i} &= \frac{E_{s,i}}{\Delta t_k}, \\
+P_i &= \frac{E_i}{\Delta t_k}
+\end{aligned}
+\]
+Power uses the current interval length in the denominator.
+
+\paragraph{C13. Aggregate specific energy by collision}
+\[
+\begin{aligned}
+SE_{n,k}^{coll} &= \frac{\sum_{i \in C_k} E_{n,i}}{\sum_{i \in C_k} m_{eff,i}}, \\
+SE_{s,k}^{coll} &= \frac{\sum_{i \in C_k} E_{s,i}}{\sum_{i \in C_k} m_{eff,i}}, \\
+SE_k^{coll} &= \frac{\sum_{i \in C_k} E_i}{\sum_{i \in C_k} m_{eff,i}}
+\end{aligned}
+\]
+The implementation aggregates energy first and then divides by the sum of valid reduced masses.
+So this quantity is not the arithmetic mean of per-collision $SI_{n,i}$, $SI_{s,i}$, or $SI_i$ values.
+
+\paragraph{C14. Particle split used for particle SI values still exported in the collision summary CSV}
+\[
+\begin{aligned}
+E_{n,p} &= \frac{1}{2}\sum_{i \sim p} E_{n,i}, \\
+E_{s,p} &= \frac{1}{2}\sum_{i \sim p} E_{s,i}, \\
+SI_{n,p} &= \frac{E_{n,p}}{m_p}, \\
+SI_{s,p} &= \frac{E_{s,p}}{m_p}
+\end{aligned}
+\]
+These particle-based SI values appear in \code{collision_over_time.csv} because the shared timestep core computes both collision and particle summaries.
+
+\paragraph{C15. Host-particle rotational metrics}
+\[
+\begin{aligned}
+d_{h,k}^{rot} &= r_h \|\boldsymbol{\omega}_h\| \Delta t_k, \\
+\xi_{h,k} &= I[n_{h,k} > 0], \\
+D_{h,k}^{rot} &= D_{h,k-1}^{rot} + \xi_{h,k} d_{h,k}^{rot}, \\
+T_{h,k}^{contact} &= T_{h,k-1}^{contact} + \xi_{h,k}\Delta t_k
+\end{aligned}
+\]
+The contact indicator uses the current sampled active collision count for each host particle.
+It is a gate based only on whether the host particle has any current sampled collision in $C_k$; it does not integrate overlap history by itself.
+
+\section*{Summary CSV fields}
+\small
+\begin{longtable}{@{}L{0.33\textwidth}L{0.22\textwidth}L{0.37\textwidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Calculation / reference} & \textbf{Meaning}\\
+\midrule
+\endhead
+\code{time} & Current sample time $t_k$. & EDEM time value for the processed timestep.\\
+\code{number_of_collisions} & $N_k = |C_k|$. & Number of sampled collisions in the current surfSurf snapshot.\\
+\code{Ave_contact_duration_per_collision} & Mean of $d_i$ over current sampled collisions. Eq.~C3. & Average full contact duration.\\
+\code{total_collision_time} & Sum of $\tau_i^{overlap}$ over sampled collisions. Eq.~C2. & Total overlap time attributed to the current interval.\\
+\code{average_collision_time} & Mean of $\tau_i^{overlap}$ over sampled collisions. Eq.~C2. & Average overlap time per sampled collision in the current interval.\\
+\code{collision_frequency} & $N_k^{new} / \Delta t_k$. Eq.~C4. & Frequency of the newly started subset of $C_k$, where $C_k$ itself is the full current sampled collision set.\\
+\code{Ave_TotalColForce_inSys_byCollision} & Mean of $F_i$ over sampled collisions. Eq.~C5. & Average current total collision force magnitude.\\
+\code{Ave_Fcol_Max_per_collision} & Mean of $F_i^{max}$. Eq.~C6. & Average maximum force magnitude.\\
+\code{Max_Fcol_Max_per_collision} & Max of $F_i^{max}$. Eq.~C6. & Largest maximum force magnitude in the sampled collision set.\\
+\code{high_impact_event_fraction} & Count($F_i^{max} > \mathrm{threshold}$) / $N_k$. Eq.~C6. & Fraction of sampled collisions above the configured impact threshold.\\
+\code{Ave_SI_normal_per_collision} & Mean of $SI_{n,i}$ over valid reduced masses. Eq.~C8. & Average collision normal specific intensity.\\
+\code{Ave_SI_shear_per_collision} & Mean of $SI_{s,i}$ over valid reduced masses. Eq.~C8. & Average collision shear specific intensity.\\
+\code{Ave_SI_total_per_collision} & Mean of $SI_i$ over valid reduced masses. Eq.~C8. & Average collision total specific intensity.\\
+\code{Total_normal_specific_energy_by_collision} & Aggregate collision normal specific energy. Eq. C13. & Energy summed over collisions, then divided by summed reduced mass.\\
+\code{Total_shear_specific_energy_by_collision} & Aggregate collision shear specific energy. Eq. C13. & Energy summed over collisions, then divided by summed reduced mass.\\
+\code{Total_specific_energy_by_collision} & Aggregate collision total specific energy. Eq. C13. & Energy summed over collisions, then divided by summed reduced mass.\\
+\code{Ave_SI_normal_per_particle} & Mean over particles of $SI_{n,p}$ from the shared core. Eq.~C14. & Particle-based normal SI still written into the collision summary CSV.\\
+\code{Ave_SI_shear_per_particle} & Mean over particles of $SI_{s,p}$ from the shared core. Eq.~C14. & Particle-based shear SI still written into the collision summary CSV.\\
+\code{Ave_SI_total_per_particle} & Mean over particles of $SI_p$ from the shared core. Eq.~C14. & Particle-based total SI still written into the collision summary CSV.\\
+\code{Ave_normal_stress_value_per_collision} & Mean of $\sigma_{n,i}$ over sampled collisions. Eq.~C11. & Average normal stress proxy per collision.\\
+\code{Ave_shear_stress_value_per_collision} & Mean of $\sigma_{s,i}$ over sampled collisions. Eq.~C11. & Average shear stress proxy per collision.\\
+\code{Ave_stress_value_per_collision} & Mean of $\sigma_i$ over sampled collisions. Eq.~C11. & Average total stress proxy per collision.\\
+\code{Ave_normal_power_per_collision} & Mean of $P_{n,i}$ over sampled collisions. Eq.~C12. & Average normal power per collision.\\
+\code{Ave_shear_power_per_collision} & Mean of $P_{s,i}$ over sampled collisions. Eq.~C12. & Average shear power per collision.\\
+\code{Ave_power_per_collision} & Mean of $P_i$ over sampled collisions. Eq.~C12. & Average total power per collision.\\
+\code{Total_normal_power_by_collision} & Sum of $P_{n,i}$ over sampled collisions. Eq.~C12. & Total normal power across the current sampled collision set.\\
+\code{Total_shear_power_by_collision} & Sum of $P_{s,i}$ over sampled collisions. Eq.~C12. & Total shear power across the current sampled collision set.\\
+\code{Total_power_by_collision} & Sum of $P_i$ over sampled collisions. Eq.~C12. & Total power across the current sampled collision set.\\
+\code{Ave_rotational_distance_per_host_particle} & Mean of $d_{h,k}^{rot}$ over all host particles sampled at $k$. Eq.~C15. & Average host rotational distance in the current interval.\\
+\code{Ave_rotational_distance_total_per_host_particle} & Mean of $D_{h,k}^{rot}$ over host particles with $\xi_{h,k} = 1$. Eq.~C15. & Average cumulative host rotational distance among currently contacting host particles.\\
+\code{Ave_cumulative_contact_time_per_host_particle} & Mean of $T_{h,k}^{contact}$ over host particles with $\xi_{h,k} = 1$. Eq.~C15. & Average cumulative host contact time among currently contacting host particles.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section*{Extracted CSV fields}
+\small
+\begin{longtable}{@{}L{0.33\textwidth}L{0.22\textwidth}L{0.37\textwidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Calculation / reference} & \textbf{Meaning}\\
+\midrule
+\endhead
+\code{time} & Scalar $t_k$ for the extract timestep. & Written once at the top of the extracted block by the CSV expansion helper.\\
+\code{collision_id} & Row index $0, 1, \ldots, N_k - 1$. & Local collision row number in the current extract snapshot, not a persistent collision ID.\\
+\code{first_particle_id} & Raw first collision particle ID from EDEM. & First particle in the sampled collision pair.\\
+\code{second_particle_id} & Raw second collision particle ID from EDEM. & Second particle in the sampled collision pair.\\
+\code{specific_energy_normal_per_collision} & $SI_{n,i}$ when reduced mass is valid, else $0$. Eq.~C8. & Collision normal specific intensity.\\
+\code{specific_energy_shear_per_collision} & $SI_{s,i}$ when reduced mass is valid, else $0$. Eq.~C8. & Collision shear specific intensity.\\
+\code{specific_energy_total_per_collision} & $SI_i$ when reduced mass is valid, else $0$. Eq.~C8. & Collision total specific intensity.\\
+\code{collision_area} & $A_i$ from Eq.~C9. & Collision area proxy used by the stress calculation.\\
+\code{normal_force_magnitude_per_collision} & $F_{n,i}$ from Eq.~C5. & Current normal-force magnitude.\\
+\code{shear_force_magnitude_per_collision} & $F_{s,i}$ from Eq.~C5. & Current tangential-force magnitude.\\
+\code{total_force_magnitude_per_collision} & $F_i$ from Eq.~C5. & Current total collision-force magnitude.\\
+\code{normal_stress_value_per_collision} & $\sigma_{n,i}$ from Eq.~C11. & Normal stress proxy.\\
+\code{shear_stress_value_per_collision} & $\sigma_{s,i}$ from Eq.~C11. & Shear stress proxy.\\
+\code{stress_value_per_collision} & $\sigma_i$ from Eq.~C11. & Total stress proxy.\\
+\code{normal_power_per_collision} & $P_{n,i}$ from Eq.~C12. & Normal power.\\
+\code{shear_power_per_collision} & $P_{s,i}$ from Eq.~C12. & Shear power.\\
+\code{power_per_collision} & $P_i$ from Eq.~C12. & Total power.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section*{Implementation notes}
+\noindent - All displayed formulas reflect the current implementation in \code{stress_collision_based.py}.\par
+\noindent - Collision continuity for the trapezoidal rule is matched by unordered particle pair and nearest contact position when multiple contacts share the same pair.\par
+\noindent - The collision summary and collision extracted file do not add a separate previous-only tail term. Tail handling is only added at particle level inside the shared timestep core.\par
+\noindent - If a denominator is zero, if no valid term exists, or if a feature flag is disabled in \code{Stress_settings.txt}, the corresponding exported values remain 0.\par
+\noindent - The CSV expansion helper writes scalar fields such as time only once at the top of an extracted block, leaving the remaining rows blank in that scalar column.\par
+
+\end{document}
